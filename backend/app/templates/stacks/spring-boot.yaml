@@ -1,0 +1,28 @@
+key: spring-boot
+name: Java + Spring Boot (Maven)
+language: Java
+category: Backend
+description: Maven build into a slim JRE image, PostgreSQL.
+detect: {files: [pom.xml, build.gradle, build.gradle.kts], deps: [spring-boot]}
+dockerfile:
+  - from: {image: "maven:3.9-eclipse-temurin-21", as: build}
+  - workdir: {path: /app}
+  - copy: {src: pom.xml, dest: .}
+  - run: {command: mvn -B dependency:go-offline}
+  - copy: {src: src, dest: ./src}
+  - run: {command: mvn -B package -DskipTests}
+  - from: {image: "eclipse-temurin:21-jre"}
+  - workdir: {path: /app}
+  - copy: {from: build, src: /app/target/*.jar, dest: app.jar}
+  - expose: {port: 8080}
+  - cmd: {args: [java, -jar, app.jar]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: api, build: ., ports: ["8080:8080"], environment: {SPRING_DATASOURCE_URL: "jdbc:postgresql://db:5432/app", SPRING_DATASOURCE_USERNAME: app, SPRING_DATASOURCE_PASSWORD: app}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: java, version: "21", cache: maven}
+  - test: {command: mvn -B test}
+  - build: {command: mvn -B package -DskipTests}
+  - docker_build: {image: "api:${{ github.sha }}"}

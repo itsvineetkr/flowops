@@ -1,0 +1,24 @@
+key: flask
+name: Python + Flask
+language: Python
+category: Backend
+description: Flask served by gunicorn.
+detect: {files: [requirements.txt, pyproject.toml], deps: [flask]}
+dockerfile:
+  - from: {image: python:3.12-slim}
+  - workdir: {path: /app}
+  - copy: {src: requirements.txt, dest: .}
+  - run: {command: pip install --no-cache-dir -r requirements.txt gunicorn}
+  - copy: {src: ., dest: .}
+  - expose: {port: 5000}
+  - cmd: {args: [gunicorn, -b, "0.0.0.0:5000", app:app]}
+compose:
+  - service: {name: web, build: ., ports: ["5000:5000"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: python, version: "3.12", cache: pip}
+  - install: {command: pip install -r requirements.txt}
+  - lint: {command: pip install ruff && ruff check ., _after: [install]}
+  - test: {command: pytest, _after: [install]}
+  - docker_build: {image: "web:${{ github.sha }}", _after: [lint, test]}

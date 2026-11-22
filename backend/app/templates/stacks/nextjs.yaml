@@ -1,0 +1,30 @@
+key: nextjs
+name: Next.js
+language: TypeScript
+category: Full-stack
+description: Next.js app with production build.
+detect: {files: [package.json], deps: [next]}
+dockerfile:
+  - from: {image: node:20-alpine, as: build}
+  - workdir: {path: /app}
+  - copy: {src: package*.json, dest: ./}
+  - run: {command: npm ci}
+  - copy: {src: ., dest: .}
+  - run: {command: npm run build}
+  - from: {image: node:20-alpine}
+  - workdir: {path: /app}
+  - env: {key: NODE_ENV, value: production}
+  - copy: {from: build, src: /app, dest: ./}
+  - expose: {port: 3000}
+  - cmd: {args: [npm, start]}
+compose:
+  - service: {name: web, build: ., ports: ["3000:3000"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20", cache: npm}
+  - install: {command: npm ci}
+  - lint: {command: npm run lint, _after: [install]}
+  - test: {command: npm test --if-present, _after: [install]}
+  - build: {command: npm run build, _after: [lint, test]}
+  - docker_build: {image: "web:${{ github.sha }}"}

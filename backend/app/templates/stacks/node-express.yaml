@@ -1,0 +1,28 @@
+key: node-express
+name: Node.js + Express
+language: JavaScript
+category: Backend
+description: Express API with PostgreSQL.
+placeholders:
+  node_main: {default: server.js, label: Entry file}
+detect: {files: [package.json], deps: [express]}
+dockerfile:
+  - from: {image: node:20-alpine}
+  - workdir: {path: /app}
+  - copy: {src: package*.json, dest: ./}
+  - run: {command: npm ci --omit=dev}
+  - copy: {src: ., dest: .}
+  - env: {key: NODE_ENV, value: production}
+  - expose: {port: 3000}
+  - cmd: {args: [node, "{{node_main}}"]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: app, build: ., ports: ["3000:3000"], environment: {DATABASE_URL: "postgres://app:app@db:5432/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20", cache: npm}
+  - install: {command: npm ci}
+  - lint: {command: npm run lint, _after: [install]}
+  - test: {command: npm test, _after: [install]}
+  - docker_build: {image: "app:${{ github.sha }}", _after: [lint, test]}

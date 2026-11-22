@@ -1,0 +1,29 @@
+key: django
+name: Python + Django
+language: Python
+category: Full-stack
+description: Django served by gunicorn, PostgreSQL.
+placeholders:
+  django_module: {default: project, label: Django project module}
+detect: {files: [manage.py, requirements.txt, pyproject.toml], deps: [django]}
+dockerfile:
+  - from: {image: python:3.12-slim}
+  - workdir: {path: /app}
+  - env: {key: PYTHONUNBUFFERED, value: "1"}
+  - copy: {src: requirements.txt, dest: .}
+  - run: {command: pip install --no-cache-dir -r requirements.txt gunicorn}
+  - copy: {src: ., dest: .}
+  - run: {command: python manage.py collectstatic --noinput}
+  - expose: {port: 8000}
+  - cmd: {args: [gunicorn, "{{django_module}}.wsgi:application", --bind, "0.0.0.0:8000"]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: web, build: ., ports: ["8000:8000"], environment: {DATABASE_URL: "postgres://app:app@db:5432/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: python, version: "3.12", cache: pip}
+  - install: {command: pip install -r requirements.txt}
+  - lint: {command: pip install ruff && ruff check ., _after: [install]}
+  - test: {command: python manage.py test, _after: [install]}
+  - docker_build: {image: "web:${{ github.sha }}", _after: [lint, test]}

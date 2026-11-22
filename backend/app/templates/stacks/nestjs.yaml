@@ -1,0 +1,32 @@
+key: nestjs
+name: NestJS
+language: TypeScript
+category: Backend
+description: NestJS API, multi-stage build, PostgreSQL.
+detect: {files: [package.json], deps: ["@nestjs/core"]}
+dockerfile:
+  - from: {image: node:20-alpine, as: build}
+  - workdir: {path: /app}
+  - copy: {src: package*.json, dest: ./}
+  - run: {command: npm ci}
+  - copy: {src: ., dest: .}
+  - run: {command: npm run build}
+  - from: {image: node:20-alpine}
+  - workdir: {path: /app}
+  - copy: {from: build, src: /app/package*.json, dest: ./}
+  - run: {command: npm ci --omit=dev}
+  - copy: {from: build, src: /app/dist, dest: ./dist}
+  - expose: {port: 3000}
+  - cmd: {args: [node, dist/main.js]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: api, build: ., ports: ["3000:3000"], environment: {DATABASE_URL: "postgres://app:app@db:5432/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20", cache: npm}
+  - install: {command: npm ci}
+  - lint: {command: npm run lint, _after: [install]}
+  - test: {command: npm test, _after: [install]}
+  - build: {command: npm run build, _after: [lint, test]}
+  - docker_build: {image: "api:${{ github.sha }}"}

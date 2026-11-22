@@ -1,0 +1,41 @@
+# Production stack: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flowops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: flowops
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowops"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  backend:
+    build: ./backend
+    environment:
+      ENV: production
+      DATABASE_URL: postgresql+psycopg://flowops:${POSTGRES_PASSWORD}@db:5432/flowops
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
+      TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:-}
+      FRONTEND_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:?set GITHUB_APP_SLUG}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?set GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?set GITHUB_CLIENT_SECRET}
+      # COOKIE_SECURE defaults to 1 in production; set to 0 only if serving over plain HTTP
+      COOKIE_SECURE: ${COOKIE_SECURE:-1}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  web:
+    build: ./frontend
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+volumes:
+  pgdata:

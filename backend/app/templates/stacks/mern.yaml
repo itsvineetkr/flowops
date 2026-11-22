@@ -1,0 +1,32 @@
+key: mern
+name: MERN (Mongo, Express, React, Node)
+language: JavaScript
+category: Full-stack
+description: React client built into an Express server, with MongoDB. Expects client/ and server/ folders.
+detect: {files: [package.json], deps: [express, mongoose, react]}
+dockerfile:
+  - from: {image: node:20-alpine, as: client}
+  - workdir: {path: /client}
+  - copy: {src: client/package*.json, dest: ./}
+  - run: {command: npm ci}
+  - copy: {src: client/, dest: .}
+  - run: {command: npm run build}
+  - from: {image: node:20-alpine}
+  - workdir: {path: /app}
+  - copy: {src: server/package*.json, dest: ./}
+  - run: {command: npm ci --omit=dev}
+  - copy: {src: server/, dest: .}
+  - copy: {from: client, src: /client/dist, dest: ./public}
+  - expose: {port: 5000}
+  - cmd: {args: [node, server.js]}
+compose:
+  - service: {_id: mongo, name: mongo, image: "mongo:7", volumes: ["mongodata:/data/db"]}
+  - service: {name: app, build: ., ports: ["5000:5000"], environment: {MONGO_URL: "mongodb://mongo:27017/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20"}
+  - install: {command: npm ci --prefix client && npm ci --prefix server}
+  - test: {command: npm test --prefix server --if-present, _after: [install]}
+  - build: {command: npm run build --prefix client, _after: [install]}
+  - docker_build: {image: "app:${{ github.sha }}", _after: [test, build]}

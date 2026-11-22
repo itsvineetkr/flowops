@@ -1,0 +1,25 @@
+key: fastapi
+name: Python + FastAPI
+language: Python
+category: Backend
+description: FastAPI with uvicorn and PostgreSQL.
+detect: {files: [requirements.txt, pyproject.toml], deps: [fastapi]}
+dockerfile:
+  - from: {image: python:3.12-slim}
+  - workdir: {path: /app}
+  - copy: {src: requirements.txt, dest: .}
+  - run: {command: pip install --no-cache-dir -r requirements.txt}
+  - copy: {src: ., dest: .}
+  - expose: {port: 8000}
+  - cmd: {args: [uvicorn, main:app, --host, 0.0.0.0, --port, "8000"]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: api, build: ., ports: ["8000:8000"], environment: {DATABASE_URL: "postgresql://app:app@db:5432/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: python, version: "3.12", cache: pip}
+  - install: {command: pip install -r requirements.txt}
+  - lint: {command: pip install ruff && ruff check ., _after: [install]}
+  - test: {command: pytest, _after: [install]}
+  - docker_build: {image: "api:${{ github.sha }}", _after: [lint, test]}

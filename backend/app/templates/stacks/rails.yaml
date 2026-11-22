@@ -1,0 +1,26 @@
+key: rails
+name: Ruby on Rails
+language: Ruby
+category: Full-stack
+description: Rails app with PostgreSQL.
+detect: {files: [Gemfile], deps: [rails]}
+dockerfile:
+  - from: {image: "ruby:3.3"}
+  - workdir: {path: /app}
+  - copy: {src: Gemfile Gemfile.lock, dest: ./}
+  - run: {command: bundle install}
+  - copy: {src: ., dest: .}
+  - env: {key: RAILS_ENV, value: production}
+  - expose: {port: 3000}
+  - cmd: {args: [bundle, exec, rails, server, -b, 0.0.0.0]}
+compose:
+  - service: {_id: db, name: db, image: postgres:16-alpine, environment: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}, volumes: ["pgdata:/var/lib/postgresql/data"]}
+  - service: {name: web, build: ., ports: ["3000:3000"], environment: {DATABASE_URL: "postgres://app:app@db:5432/app"}}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: ruby, version: "3.3"}
+  - install: {command: bundle install}
+  - lint: {command: bundle exec rubocop, _after: [install]}
+  - test: {command: bundle exec rails test, _after: [install]}
+  - docker_build: {image: "web:${{ github.sha }}", _after: [lint, test]}

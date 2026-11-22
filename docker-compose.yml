@@ -1,0 +1,56 @@
+# Development stack with hot reload: docker compose up --build
+#   frontend http://localhost:5173 · backend http://localhost:8000 · postgres localhost:5433
+# Secrets (GitHub App, SECRET_KEY) come from backend/.env. Production: docker-compose.prod.yml.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flowops
+      POSTGRES_PASSWORD: flowops
+      POSTGRES_DB: flowops
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"  # 5433 avoids clashing with a local Postgres on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowops"]
+      interval: 2s
+      retries: 15
+
+  backend:
+    build: ./backend
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      # inside the compose network the database is "db", not localhost:5433 as in backend/.env
+      DATABASE_URL: postgresql+psycopg://flowops:flowops@db:5432/flowops
+      FRONTEND_URL: http://localhost:5173
+    # source is mounted, so edits reload without rebuilding (only app/ and migrations/ are watched)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app --reload-dir migrations
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    # node_modules lives in a volume: the host's copy has macOS binaries (esbuild, rollup) that don't run in Linux
+    command: sh -c "npm install --no-audit --no-fund && npx vite --host 0.0.0.0 --port 5173 --strictPort"
+    environment:
+      API_PROXY: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  frontend_node_modules:

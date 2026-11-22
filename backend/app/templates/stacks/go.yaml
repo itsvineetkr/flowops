@@ -1,0 +1,27 @@
+key: go
+name: Go
+language: Go
+category: Backend
+description: Static Go binary on a distroless image.
+detect: {files: [go.mod]}
+dockerfile:
+  - from: {image: "golang:1.23", as: build}
+  - workdir: {path: /src}
+  - copy: {src: go.*, dest: ./}
+  - run: {command: go mod download}
+  - copy: {src: ., dest: .}
+  - run: {command: CGO_ENABLED=0 go build -o /out/app .}
+  - from: {image: "gcr.io/distroless/static-debian12:nonroot"}
+  - copy: {from: build, src: /out/app, dest: /app}
+  - expose: {port: 8080}
+  - cmd: {args: [/app]}
+compose:
+  - service: {name: app, build: ., ports: ["8080:8080"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: go, version: "1.23"}
+  - install: {command: go mod download}
+  - lint: {command: go vet ./..., _after: [install]}
+  - test: {command: go test ./..., _after: [install]}
+  - docker_build: {image: "app:${{ github.sha }}", _after: [lint, test]}

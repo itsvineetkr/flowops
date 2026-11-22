@@ -1,0 +1,27 @@
+key: vue
+name: Vue
+language: TypeScript
+category: Frontend
+description: Vue (Vite) build served by nginx.
+detect: {files: [package.json], deps: [vue]}
+dockerfile:
+  - from: {image: node:20-alpine, as: build}
+  - workdir: {path: /app}
+  - copy: {src: package*.json, dest: ./}
+  - run: {command: npm ci}
+  - copy: {src: ., dest: .}
+  - run: {command: npm run build}
+  - from: {image: nginx:alpine}
+  - copy: {from: build, src: /app/dist, dest: /usr/share/nginx/html}
+  - expose: {port: 80}
+compose:
+  - service: {name: web, build: ., ports: ["8080:80"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20", cache: npm}
+  - install: {command: npm ci}
+  - lint: {command: npm run lint --if-present, _after: [install]}
+  - test: {command: npm run test:unit --if-present, _after: [install]}
+  - build: {command: npm run build, _after: [lint, test]}
+  - docker_build: {image: "web:${{ github.sha }}"}

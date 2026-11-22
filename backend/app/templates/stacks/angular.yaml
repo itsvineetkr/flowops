@@ -1,0 +1,29 @@
+key: angular
+name: Angular
+language: TypeScript
+category: Frontend
+description: Angular build served by nginx.
+placeholders:
+  angular_project: {default: app, label: Angular project name}
+detect: {files: [angular.json, package.json], deps: ["@angular/core"]}
+dockerfile:
+  - from: {image: node:20-alpine, as: build}
+  - workdir: {path: /app}
+  - copy: {src: package*.json, dest: ./}
+  - run: {command: npm ci}
+  - copy: {src: ., dest: .}
+  - run: {command: npm run build}
+  - from: {image: nginx:alpine}
+  - copy: {from: build, src: "/app/dist/{{angular_project}}/browser", dest: /usr/share/nginx/html}
+  - expose: {port: 80}
+compose:
+  - service: {name: web, build: ., ports: ["8080:80"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: node, version: "20", cache: npm}
+  - install: {command: npm ci}
+  - lint: {command: npx ng lint, _after: [install]}
+  - test: {command: npx ng test --watch=false --browsers=ChromeHeadless, _after: [install]}
+  - build: {command: npm run build, _after: [lint, test]}
+  - docker_build: {image: "web:${{ github.sha }}"}

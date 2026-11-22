@@ -1,0 +1,29 @@
+key: dotnet
+name: .NET (ASP.NET Core)
+language: C#
+category: Backend
+description: ASP.NET Core publish into the aspnet runtime image.
+placeholders:
+  dotnet_assembly: {default: App, label: .NET assembly name}
+detect: {files: ["*.csproj", "*.sln"]}
+dockerfile:
+  - from: {image: "mcr.microsoft.com/dotnet/sdk:8.0", as: build}
+  - workdir: {path: /src}
+  - copy: {src: ., dest: .}
+  - run: {command: dotnet publish -c Release -o /app/publish}
+  - from: {image: "mcr.microsoft.com/dotnet/aspnet:8.0"}
+  - workdir: {path: /app}
+  - copy: {from: build, src: /app/publish, dest: .}
+  - env: {key: ASPNETCORE_URLS, value: "http://+:8080"}
+  - expose: {port: 8080}
+  - cmd: {args: [dotnet, "{{dotnet_assembly}}.dll"]}
+compose:
+  - service: {name: api, build: ., ports: ["8080:8080"]}
+pipeline:
+  - trigger: {events: [push, pull_request], branches: [main]}
+  - checkout: {}
+  - setup_runtime: {runtime: dotnet, version: "8.0.x"}
+  - install: {command: dotnet restore}
+  - build: {command: dotnet build --no-restore -c Release}
+  - test: {command: dotnet test --no-build -c Release}
+  - docker_build: {image: "api:${{ github.sha }}"}
